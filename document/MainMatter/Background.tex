@@ -1,0 +1,450 @@
+\chapter{Marco Teórico}\label{chapter:background}
+
+\newenvironment{demostracion}{\par\noindent\textit{Demostración.}\ }{\hfill$\square$\par\medskip}
+
+Este capítulo establece los fundamentos formales sobre los que se apoya el resto del trabajo. Se comienza por la definición precisa del problema de partición de números y de sus versiones de optimización y de decisión, se analiza su complejidad computacional, demostrando su NP-completitud y su carácter pseudopolinomial, y se introduce el ensemble de instancias aleatorias en el que se manifiesta la transición de fase que motiva la tesis. A continuación se describen los tres algoritmos objeto de estudio, esto es, la heurística de diferenciación de Karmarkar--Karp, su extensión completa mediante ramificación y poda y el recocido simulado, con énfasis en las propiedades que condicionan su comportamiento en torno a la transición.
+
+\section{Formulación del problema}
+
+Una instancia del problema de partición de números es una secuencia $\vec{a} = (a_1, \ldots, a_N)$ de números positivos, que en este trabajo son enteros salvo que se indique lo contrario. Una partición de la instancia es una división de los índices $\{1, \ldots, N\}$ en dos subconjuntos disjuntos $A$ y $\bar{A}$, y queda determinada de forma equivalente por un vector de signos $\vec{s} \in \{-1,+1\}^N$ con $s_i = +1$ si $i \in A$ y $s_i = -1$ en caso contrario. La calidad de una partición se mide por la diferencia absoluta entre las sumas de ambos subconjuntos.
+
+\begin{definition}[Discrepancia y problemas asociados]\label{def:discrepancy}
+Dada una instancia $\vec{a}$, la discrepancia de la partición $\vec{s}$ es
+\begin{equation}
+    E(\vec{s}) = \nnorm{\sum_{i=1}^{N} s_i a_i} = \nnorm{\sum_{i \in A} a_i - \sum_{i \in \bar{A}} a_i},
+    \label{eq:bg-discrepancy}
+\end{equation}
+y la discrepancia óptima es $E_{\mathrm{opt}}(\vec{a}) = \min_{\vec{s}} E(\vec{s})$. El problema de optimización consiste en hallar una partición que alcance $E_{\mathrm{opt}}$. El problema de decisión asociado a un umbral $d \geq 0$ consiste en determinar si existe $\vec{s}$ con $E(\vec{s}) \leq d$.
+\end{definition}
+
+Puesto que $E(\vec{s}) = E(-\vec{s})$, las particiones se agrupan en pares de vectores opuestos, de modo que la instancia admite $2^{N-1}$ particiones distintas salvo el intercambio de los dos subconjuntos. El problema de decisión que la literatura de la complejidad computacional denomina PARTITION corresponde al umbral $d = 0$ \parencite{garey1979}, es decir, a la pregunta de si los números pueden repartirse en dos subconjuntos de igual suma.
+
+La estructura aritmética del problema impone cotas elementales que se utilizan reiteradamente en el análisis de los algoritmos.
+
+\begin{lemma}[Paridad y cotas de la discrepancia]\label{lem:bounds}
+Sea $\vec{a}$ una instancia de enteros positivos con suma $S = \sum_i a_i$ y sea $a_{\max} = \max_i a_i$. Entonces toda partición satisface $E(\vec{s}) \equiv S \pmod 2$, de modo que $E_{\mathrm{opt}} \geq S \bmod 2$. Además,
+\[
+    \max\Bigl\{S \bmod 2,\; a_{\max} - \sum_{i \neq i^\ast} a_i\Bigr\} \leq E_{\mathrm{opt}} \leq a_{\max},
+\]
+donde $i^\ast$ es un índice que alcanza el máximo.
+\end{lemma}
+
+\begin{demostracion}
+Como $s_i a_i \equiv a_i \pmod 2$ para todo $i$, la suma $\sum_i s_i a_i$ tiene la misma paridad que $S$ y lo mismo ocurre con su valor absoluto. Para la cota inferior, la desigualdad triangular da $\nnorm{\sum_i s_i a_i} \geq a_{i^\ast} - \sum_{i \neq i^\ast} a_i$ para cualquier elección de signos. Para la cota superior se procesan los elementos en cualquier orden, asignando cada uno al subconjunto de menor suma. Si $d_k$ denota la discrepancia tras $k$ asignaciones, entonces $d_k = \nnorm{d_{k-1} - a_k} \leq \max\{d_{k-1}, a_k\}$ y, como $d_0 = 0$, resulta por inducción $d_N \leq a_{\max}$.
+\end{demostracion}
+
+Una partición se denomina perfecta cuando su discrepancia alcanza la cota de paridad, es decir, cuando $E(\vec{s}) \leq 1$. Si la suma $S$ es par, una partición perfecta tiene discrepancia nula, y si es impar, discrepancia unitaria \parencite{mertens2001,borgs2001}.
+
+El problema posee además una interpretación operativa que explica parte de su interés práctico. Si los números son los tiempos de procesamiento de un conjunto de tareas y se dispone de dos procesadores idénticos, el tiempo total de finalización de una asignación es $\max\{S_1, S_2\}$, donde $S_1$ y $S_2$ son las sumas de los dos subconjuntos. Como $S_1 + S_2 = S$, se cumple $\max\{S_1, S_2\} = (S + E)/2$, y por tanto minimizar la discrepancia equivale a minimizar el tiempo de finalización \parencite{korf1998}.
+
+La formulación mediante signos permite, además, asociar al problema un sistema físico. La energía $H(\vec{s}) = E(\vec{s})^2$ se escribe
+\begin{equation}
+    H(\vec{s}) = \sum_{i,j=1}^{N} s_i a_i a_j s_j,
+    \label{eq:bg-hamiltonian}
+\end{equation}
+que es el hamiltoniano de un vidrio de espín de Ising de alcance infinito con acoplamientos antiferromagnéticos $J_{ij} = -a_i a_j$, y cuyo estado base coincide con la partición óptima \parencite{mertens1998,mertens2001,ferreira1998}. Esta correspondencia es el fundamento del análisis mediante mecánica estadística que se emplea en la sección~\ref{sec:bg-random} y, con una función de energía igual a $E$ o a $H$, de la aplicación del recocido simulado de la sección~\ref{sec:bg-sa}.
+
+Existen variantes del problema que modifican el espacio de soluciones. En la partición balanceada se exige que los cardinales de $A$ y $\bar{A}$ difieran en a lo sumo una unidad, caso para el que existe una variante del algoritmo completo de la sección~\ref{sec:bg-ckk} \parencite{mertens1999}; en la partición restringida se fija la diferencia de cardinales, lo que da lugar a una segunda transición de fase \parencite{mertens2001}; y en la partición en $k$ subconjuntos se minimiza la diferencia entre la mayor y la menor de las sumas \parencite{korf1998,gent1996}. El presente trabajo se limita a la partición en dos subconjuntos sin restricción de cardinalidad.
+
+\section{Complejidad computacional}
+
+Un problema de decisión pertenece a la clase NP si toda respuesta afirmativa admite un certificado verificable en tiempo polinomial, y es NP-completo si además todo problema de NP puede reducirse a él en tiempo polinomial \parencite{cook1971,garey1979}. Para demostrar que PARTITION es NP-completo se parte de un problema cuya NP-completitud es conocida, el de suma de subconjuntos. Dados enteros positivos $a_1, \ldots, a_n$ y un entero positivo $c$, este problema pregunta si existe un subconjunto de los $a_i$ cuya suma es exactamente $c$. Se trata de la versión de decisión del problema de la mochila definida por \textcite{karp1972}, cuya NP-completitud es un resultado clásico \parencite{karp1972,garey1979,merkle1978}.
+
+\begin{theorem}[NP-completitud de PARTITION]\label{thm:np-complete}
+	El problema de decidir si una secuencia de enteros positivos puede dividirse en dos subconjuntos de igual suma es NP-completo.
+\end{theorem}
+
+\begin{demostracion}
+	La pertenencia a NP es inmediata, pues dado un subconjunto $A$, su suma y la suma de su complementario se calculan en tiempo lineal en el tamaño de la entrada, y restaría solamente efectuar la diferencia entre ellas. Para probar la NP-dificultad se describe una reducción polinomial desde el problema de suma de subconjuntos. Sea $(a_1,\ldots,a_n;c)$ una instancia de suma de subconjuntos, es decir, se pregunta si existe $B\subseteq\{1,\ldots,n\}$ tal que
+	\[
+	\sum_{i\in B} a_i = c.
+	\]
+	Sea $S=\sum_{i=1}^n a_i$, si $c>S$, no existe ningún subconjunto de suma $c$, porque todos los $a_i$ son positivos. En ese caso la reducción devuelve una instancia fija sin partición perfecta, por ejemplo $(2,1)$, cuya suma total es impar y que por tanto no admite una partición en dos subconjuntos de igual suma.
+	
+	Supongamos, pues, que $c\leq S$. Se definen
+	\[
+	c'=\max\{c,\,S-c\},
+	\qquad
+	d=2c'-S.
+	\]
+	Como $c\leq S$, se tiene $S-c\geq 0$, de modo que $c'\geq S/2$ y $d\geq 0$. Además,
+	\[
+	d=2c'-S=|S-2c|,
+	\qquad
+	c'=\frac{S+d}{2}.
+	\]
+	La elección de $c'$ se justifica porque la aplicación $B\mapsto \{1,\ldots,n\}\setminus B$ es una biyección entre los subconjuntos de suma $c$ y los subconjuntos de suma $S-c$. En consecuencia, existe un subconjunto de suma $c$ si y solo si existe un subconjunto de suma $c'$. En efecto, si $c'=c$ la afirmación es trivial, y si $c'=S-c$ basta tomar el complementario de cualquier subconjunto de suma $c$.
+	
+	Si $d=0$, entonces $c'=S/2$. Como $c'=\max\{c,S-c\}$ y $c+(S-c)=S$, la igualdad $c'=S/2$ obliga a que $c=S-c=S/2$. En este caso la reducción devuelve la propia secuencia $(a_1,\ldots,a_n)$. Una partición en dos subconjuntos de igual suma existe si y solo si existe un subconjunto de suma $S/2=c$, que es exactamente la pregunta original.
+	
+	Si $d>0$, la reducción devuelve la secuencia aumentada
+	\[
+	(a_1,\ldots,a_n,d).
+	\]
+	Su suma total es
+	\[
+	S+d=S+(2c'-S)=2c'.
+	\]
+	Por tanto, una partición en dos subconjuntos de igual suma de la secuencia aumentada exige que cada uno de los dos subconjuntos sume exactamente $c'$. Veamos la equivalencia en ambos sentidos.
+	
+	Si existe $B\subseteq\{1,\ldots,n\}$ con $\sum_{i\in B}a_i=c'$, entonces $B$ y
+	\[
+	\bigl(\{1,\ldots,n\}\setminus B\bigr)\cup\{d\}
+	\]
+	forman una partición de la secuencia aumentada, pues la suma del segundo subconjunto es
+	\[
+	\sum_{i\notin B} a_i+d=(S-c')+d
+	=(S-c')+(2c'-S)=c'.
+	\]
+	Recíprocamente, supongamos que la secuencia aumentada admite una partición en dos subconjuntos de igual suma. Como $d>0$, el elemento $d$ pertenece exactamente a uno de los dos subconjuntos. Sea $C\subseteq\{1,\ldots,n\}$ el otro subconjunto, esto es, el que no contiene a $d$. Como la suma total es $2c'$ y la partición es igualada, la suma de $C$ debe ser $c'$. Por tanto, $C$ es un subconjunto de la secuencia original cuya suma es $c'$. Combinando esto con la equivalencia entre los subconjuntos de suma $c$ y los de suma $c'$, se obtiene que la instancia original de suma de subconjuntos tiene solución si y solo si la secuencia construida admite una partición en dos subconjuntos de igual suma.
+	
+	Finalmente, la reducción solo requiere calcular $S$, $c'$ y $d$, escribir a lo sumo $n+1$ números y realizar un número constante de comparaciones, sumas y restas. Como $d\leq S$ y $S$ tiene una representación binaria de longitud polinomial en el tamaño de la entrada, todas las operaciones se efectúan en tiempo polinomial. Por tanto, PARTITION es NP-duro y, junto con la pertenencia a NP, se concluye que es NP-completo.
+\end{demostracion}
+
+Como consecuencia, el problema de optimización de la definición~\ref{def:discrepancy} es NP-duro, pues un algoritmo polinomial que calculase $E_{\mathrm{opt}}$ permitiría decidir PARTITION comprobando si $E_{\mathrm{opt}} = 0$. Sin embargo, la NP-completitud de PARTITION es de naturaleza particular, ya que se trata de un problema cuya dificultad depende de la magnitud de los números de la entrada y no solo de su cantidad.
+
+\begin{theorem}[Algoritmo pseudopolinomial]\label{thm:dp}
+Sea $\vec{a}$ una instancia de enteros positivos con suma $S$. La discrepancia óptima $E_{\mathrm{opt}}(\vec{a})$ puede calcularse en tiempo $O(NS)$ y espacio $O(S)$.
+\end{theorem}
+
+\begin{demostracion}
+	Para cada $k=0,1,\ldots,N$, sea
+	\[
+	S_k=\sum_{i=1}^{k}a_i
+	\]
+	y sea $R_k\subseteq\{0,\ldots,S_k\}$ el conjunto de las sumas de todos los subconjuntos de $\{a_1,\ldots,a_k\}$, es decir,
+	\[
+	R_k=\Bigl\{\sum_{i\in I}a_i : I\subseteq\{1,\ldots,k\}\Bigr\}.
+	\]
+	En particular, $R_0=\{0\}$ y $R_N$ contiene exactamente las sumas de todos los subconjuntos de la instancia completa.
+	
+	Se prueba por inducción sobre $k$ que
+	\[
+	R_k=R_{k-1}\cup (R_{k-1}+a_k),
+	\]
+	donde $R_{k-1}+a_k=\{r+a_k : r\in R_{k-1}\}$. En efecto, todo subconjunto de $\{a_1,\ldots,a_k\}$ o bien no contiene a $a_k$, en cuyo caso su suma pertenece a $R_{k-1}$, o bien contiene a $a_k$, en cuyo caso su suma es de la forma $r+a_k$ con $r\in R_{k-1}$. Recíprocamente, todo elemento de $R_{k-1}$ es suma de un subconjunto que no usa $a_k$, y todo elemento de $R_{k-1}+a_k$ es suma de un subconjunto que usa $a_k$. Además, como los $a_i$ son positivos, $r+a_k\leq S_k\leq S$ para todo $r\in R_{k-1}$, de modo que todos los elementos considerados pertenecen a $\{0,\ldots,S\}$.
+	
+	Para implementar la recurrencia, se representa cada $R_k$ mediante un vector de bits
+	\[
+	B_k=(B_k[0],B_k[1],\ldots,B_k[S])\in\{0,1\}^{S+1},
+	\]
+	donde $B_k[r]=1$ si y solo si $r\in R_k$. La recurrencia anterior se traduce en
+	\[
+	B_k[r]
+	=
+	B_{k-1}[r]
+	\;\lor\;
+	\bigl(r\geq a_k \;\land\; B_{k-1}[r-a_k]\bigr),
+	\qquad r=0,\ldots,S,
+	\]
+	con la convención de que el segundo término es $0$ cuando $r<a_k$. Es decir, $B_k$ se obtiene a partir de $B_{k-1}$ mediante una operación de desplazamiento y una unión lógica. Calcular todos los valores $B_k[0],\ldots,B_k[S]$ requiere $O(S)$ operaciones, y tras $N$ pasos se obtiene $B_N$, que codifica exactamente $R_N$.
+	
+	Una vez calculado $R_N$, para cada $r\in R_N$ sea $A\subseteq\{1,\ldots,N\}$ un subconjunto cuya suma es $r$. Entonces la suma del subconjunto complementario es $S-r$, y la discrepancia de la partición determinada por $A$ vale
+	\[
+	E
+	=
+	\lvert r-(S-r)\rvert
+	=
+	\lvert S-2r\rvert.
+	\]
+	Recíprocamente, toda partición de la instancia queda determinada por uno de sus dos subconjuntos, cuya suma pertenece a $R_N$. Por tanto, el conjunto de discrepancias alcanzables es exactamente
+	\[
+	\bigl\{\lvert S-2r\rvert : r\in R_N\bigr\},
+	\]
+	y en consecuencia
+	\[
+	E_{\mathrm{opt}}(\vec{a})
+	=
+	\min_{r\in R_N}\lvert S-2r\rvert.
+	\]
+	Así, basta recorrer los índices $r=0,\ldots,S$ con $B_N[r]=1$ y quedarse con el mínimo de $\lvert S-2r\rvert$, lo que requiere $O(S)$ operaciones adicionales.
+	
+	El cálculo de cada $B_k$ cuesta $O(S)$ y se realiza para $k=1,\ldots,N$, de modo que el tiempo total es $O(NS)$. Como en cada paso solo es necesario conservar el vector anterior y el nuevo, o incluso actualizar un único vector de bits mediante un desplazamiento y una unión lógica, el espacio requerido es $O(S)$. Por tanto, $E_{\mathrm{opt}}(\vec{a})$ puede calcularse en tiempo $O(NS)$ y espacio $O(S)$.
+\end{demostracion}
+
+Dado que $S \leq N a_{\max}$, el algoritmo del teorema~\ref{thm:dp} resuelve el problema en tiempo $O(N^2 a_{\max})$, polinomial en $N$ y en la magnitud de los números. No contradice, sin embargo, la NP-completitud del problema, porque una entrada con números de $b$ bits tiene tamaño $O(Nb)$ y la magnitud $a_{\max}$ puede ser exponencial en $b$. Se dice por ello que PARTITION es NP-completo solo en sentido débil, ya que no lo es en sentido fuerte, esto es, no sigue siéndolo cuando se restringen los números a magnitudes polinomiales en el tamaño de la entrada, a menos que $\mathrm{P} = \mathrm{NP}$ \parencite{garey1979,gent1998}. En consecuencia, la dificultad del problema exige números de tamaño arbitrario o, tras normalizar por el mayor, de precisión ilimitada \parencite{mertens2001}.
+
+Esta observación se traduce de forma cuantitativa al considerar instancias de $N$ números de $b$ bits, para las cuales el algoritmo de programación dinámica requiere $O(N^2 2^b) = 2^{\kappa N + O(\log N)}$ operaciones, con $\kappa = b/N$. Su coste es inferior al de la enumeración de las $2^{N-1}$ particiones siempre que $\kappa < 1$, y es precisamente en torno a $\kappa = 1$ donde se situará la transición de fase estudiada en la sección~\ref{sec:bg-random}.
+
+Entre los algoritmos exactos cuyo coste no depende de la magnitud de los números destaca el de \textcite{horowitz1974}, que reduce el tiempo de la enumeración exhaustiva a la raíz cuadrada del número de subconjuntos.
+
+\begin{theorem}[Enumeración por mitades]\label{thm:hs}
+La discrepancia óptima y una partición óptima de una instancia de $N$ números pueden obtenerse en tiempo $O(N 2^{N/2})$ y espacio $O(2^{N/2})$.
+\end{theorem}
+
+\begin{demostracion}
+Se divide la instancia en dos mitades $L$ y $R$ de tamaños $\lceil N/2 \rceil$ y $\lfloor N/2 \rfloor$ y se calculan, para cada una, las sumas de todos sus subconjuntos, lo que produce dos listas $U$ y $V$ de a lo sumo $2^{\lceil N/2 \rceil}$ elementos, que se ordenan en tiempo $O(N 2^{N/2})$. Una partición cuyo subconjunto $A$ tiene suma $u + v$, con $u \in U$ y $v \in V$, posee discrepancia $\nnorm{S - 2(u + v)}$, de modo que basta localizar el par que minimiza esta cantidad, esto es, el que hace $u + v$ más próxima a $S/2$. Recorriendo $U$ en orden creciente y $V$ en orden decreciente con dos punteros, cada elemento de ambas listas se visita una sola vez, lo que cuesta $O(2^{N/2})$ operaciones adicionales.
+\end{demostracion}
+
+\textcite{schroeppel1981} reducen el espacio de esta técnica a $O(2^{N/4})$ manteniendo el tiempo $O(2^{N/2})$ \parencite{korf1998}. Estos algoritmos, junto con la programación dinámica, constituyen la referencia con la que se compara el algoritmo completo de la sección~\ref{sec:bg-ckk}, que no garantiza una cota de peor caso inferior a $2^N$ pero resulta mucho más eficiente en la práctica.
+
+\section{Instancias aleatorias, transición de fase y escalado de tamaño finito}\label{sec:bg-random}
+
+El análisis del comportamiento típico del problema, en contraposición al de peor caso, se realiza sobre ensembles de instancias aleatorias. En este trabajo se considera el ensemble que permite controlar la magnitud de los números mediante el número de bits.
+
+\begin{definition}[Ensemble aleatorio de instancias]\label{def:ensemble}
+Sean $N$ y $b$ enteros positivos y $A = 2^b$. El ensemble $\mathfrak{E}(N,b)$ está formado por las instancias $\vec{a}$ cuyas componentes son variables aleatorias independientes con distribución uniforme en $\{1, \ldots, A\}$. Se denomina parámetro de control a $\kappa = b/N$.
+\end{definition}
+
+\textcite{gent1996} definieron el parámetro de restricción $\kappa = \log_2 l / n$ para números enteros extraídos del intervalo $(0, l]$, que para $l = A$ coincide con el anterior, y \textcite{mertens1998} muestra que la definición general basada en el momento de segundo orden de la distribución difiere de $\log_2 A / N$ en un término de orden $1/(NA)$. El caso de números reales distribuidos uniformemente en $[0,1)$, habitual en los análisis teóricos y en la evaluación clásica del recocido simulado \parencite{johnson1991,ferreira1998}, corresponde al límite de precisión infinita, $\kappa \to \infty$, y por tanto se sitúa por completo en la fase difícil descrita a continuación \parencite{mertens2001}.
+
+La existencia de una transición en el valor de $\kappa$ puede anticiparse mediante un cálculo de primer momento. Sea $\vec{a}\in\mathfrak{E}(N,b)$, de modo que $a_i\sim\mathcal{U}\{1,\ldots,A\}$ con $A=2^b$, y sea $\kappa=b/N$. Para cada vector de signos $\vec{s}\in\{-1,+1\}^N$ definimos
+\[
+X_{\vec{s}}=\sum_{i=1}^{N}s_i a_i.
+\]
+Si $\vec{s}$ se elige uniformemente en $\{-1,+1\}^N$ e independientemente de $\vec{a}$, las variables $s_i a_i$ son independientes, simétricas y verifican
+\[
+\mathbb{E}[s_i a_i]=0,
+\qquad
+\mathbb{E}[(s_i a_i)^2]=\mathbb{E}[a_i^2]=\langle a^2\rangle
+=\frac{(A+1)(2A+1)}{6}
+\simeq\frac{A^2}{3}.
+\]
+Por tanto,
+\[
+\mathbb{E}[X_{\vec{s}}]=0,
+\qquad
+\operatorname{Var}(X_{\vec{s}})
+=N\langle a^2\rangle
+\simeq\frac{NA^2}{3}.
+\]
+
+Sea
+\[
+Z_0(\vec{a})
+=|\{\vec{s}\in\{-1,+1\}^N : X_{\vec{s}}=0\}|,
+\]
+que cuenta cada partición perfecta dos veces, por la simetría $\vec{s}\mapsto-\vec{s}$. Entonces
+\[
+\mathbb{E}[Z_0]
+=2^N\Pr_{\vec{a},\vec{s}}(X_{\vec{s}}=0).
+\]
+Para eliminar la discusión de paridad, condicionamos a que la suma $S=\sum_i a_i$ sea par. En tal caso $X_{\vec{s}}\equiv S\equiv 0\pmod 2$. La versión local del teorema central del límite para variables aleatorias enteras con espaciamiento $2$ da
+\[
+\Pr(X_{\vec{s}}=0\mid S\text{ par})
+\simeq
+\frac{2}{\sqrt{2\pi N\langle a^2\rangle}}
+\simeq
+\frac{2}{\sqrt{2\pi N A^2/3}}.
+\]
+El factor $2$ del numerador es el espaciamiento de la red; sin él se obtendría la aproximación gaussiana habitual para una variable de espaciamiento simple (unidad). Así,
+\[
+\mathbb{E}[Z_0\mid S\text{ par}]
+\simeq
+2^N\cdot
+\frac{2}{\sqrt{2\pi N A^2/3}}
+=
+\frac{2^N}{A}
+\sqrt{\frac{6}{\pi N}}.
+\]
+Escribiendo $A=2^b=2^{\kappa N}$, se obtiene
+\[
+\log_2 \mathbb{E}[Z_0\mid S\text{ par}]
+\simeq
+N-b-\frac12\log_2\!\left(\frac{\pi N}{6}\right)
+=
+N\left(
+1-\frac{b}{N}
+-\frac{\log_2(\pi N/6)}{2N}
+\right).
+\]
+Por tanto,
+\[
+\mathbb{E}[Z_0\mid S\text{ par}]
+\simeq
+2^{N(\kappa_c(N)-\kappa)},
+\]
+donde
+\begin{equation}
+	\kappa_c(N) = 1 - \frac{\log_2(\pi N/6)}{2N},
+	\qquad
+	\kappa=\frac{b}{N}.
+	\label{eq:bg-kappa-c}
+\end{equation}
+El mismo exponente se obtiene si se cuentan las particiones perfectas con $E_{\mathrm{opt}}\le 1$ en lugar de las de discrepancia nula: la diferencia entre ambos recuentos es un factor de orden unidad asociado a la paridad de $S$, que no modifica el exponente salvo correcciones de orden $1/N$ en $\kappa_c$.
+
+Este cálculo coincide con el que se deduce de la función de partición del hamiltoniano
+\[
+H(\vec{s})=E(\vec{s})^2
+\]
+mediante el método del punto de silla. En efecto, la entropía por variable a temperatura nula obtenida por \textcite{mertens1998,mertens2001} es
+\[
+\frac{S(0)}{N}
+=
+(\kappa_c-\kappa)\ln 2+o(1),
+\]
+con
+\[
+\kappa_c
+=
+1-\frac{\ln(\pi N/6)}{2N\ln 2},
+\qquad
+\kappa
+=
+\frac{\ln\!\bigl(3\langle a^2\rangle/\Delta a^2\bigr)}{2N\ln 2},
+\]
+donde $\Delta a$ es la resolución de los números de entrada. Para enteros, $\Delta a=1$, y para la distribución uniforme en $\{1,\ldots,A\}$ se tiene $\langle a^2\rangle\simeq A^2/3$, de modo que $\kappa\simeq \log_2 A/N=b/N$, en coincidencia con el cálculo de primer momento.
+
+El número esperado de particiones perfectas es, por tanto, exponencial en $N$ cuando $\kappa<\kappa_c(N)$ y exponencialmente pequeño cuando $\kappa>\kappa_c(N)$, y $\kappa_c(N)\to 1$ cuando $N\to\infty$. La comparación con simulaciones para $10\le N\le 28$ confirma que la fracción de instancias con alguna partición perfecta cae abruptamente en torno a $\kappa_c(N)$. Mertens atribuye la estimación $\kappa_c\approx 0{,}96$ que obtuvieron \textcite{gent1996} con instancias de hasta $N=30$ a las correcciones logarítmicas de tamaño finito contenidas en $\kappa_c(N)$ \parencite{mertens2006}. Conviene subrayar que el argumento de primer momento no demuestra por sí mismo la existencia de la transición, puesto que el valor esperado de $Z_0$ puede estar dominado por instancias atípicas; su conclusión, sin embargo, ha sido establecida con rigor por \textcite{borgs2001}.
+
+\begin{theorem}[Borgs, Chayes y Pittel]\label{thm:bcp}
+Sea $\vec{a} \in \mathfrak{E}(N,b)$. Si $b/N \to \kappa < 1$, la probabilidad de que exista una partición perfecta tiende a $1$, y si $b/N \to \kappa > 1$, incluido el caso $\kappa = \infty$, tiende a $0$. Más precisamente, si $b = N - \tfrac{1}{2}\log_2 N + \lambda_N$, esa probabilidad tiende a $1$ cuando $\lambda_N \to -\infty$ y a $0$ cuando $\lambda_N \to +\infty$, y si $\lambda_N \to \lambda$ tiende a $1 - \tfrac{1}{2} r(\lambda)\,(r(\lambda) + 1)$ con $r(\lambda) = \exp\bigl(-\sqrt{3/(2\pi)}\; 2^{-\lambda}\bigr)$. Además, si $\lambda_N \to +\infty$, con probabilidad tendiente a $1$ la partición óptima es única salvo la simetría $\vec{s} \to -\vec{s}$, y $E_{\mathrm{opt}}/2^{\lambda_N + 1}$ converge en distribución a una variable exponencial de parámetro $\sqrt{6/\pi}$.
+\end{theorem}
+
+El resultado, cuya demostración se basa en estimaciones de primer y segundo momento de una representación integral del número de particiones y puede consultarse en \textcite{borgs2001}, muestra que la transición es de primer orden, pues la entropía por variable $\max\{0, 1 - \kappa\}$ tiene derivada discontinua en $\kappa = 1$, y que su ventana de escalado tiene ancho $\Theta(1/N)$ en $\kappa$ y está centrada en $1 - \log_2 N/(2N)$, en coincidencia con \eqref{eq:bg-kappa-c} salvo un término de orden $1/N$. Los autores señalan que se trata del primer análisis riguroso de escalado de tamaño finito de un problema NP-completo.
+
+La fase $\kappa > \kappa_c$ admite una descripción estadística precisa que explica su dificultad. \textcite{mertens2001} observa que, para las particiones de baja discrepancia, las $M = 2^{N-1}$ discrepancias asociadas a las particiones distintas se comportan, en el rango $E = o(N)$, como variables aleatorias independientes con densidad
+\begin{equation}
+    p(E) = \frac{2}{\sqrt{2\pi \langle a^2 \rangle N}} \exp\Bigl(-\frac{E^2}{2\langle a^2 \rangle N}\Bigr), \qquad E \geq 0,
+    \label{eq:bg-cost-density}
+\end{equation}
+de modo que el problema equivale aproximadamente a localizar el mínimo de una lista no ordenada de $M$ números aleatorios, lo que se denomina problema de costes aleatorios. Si $E_1 \leq E_2 \leq \cdots$ son los valores ordenados, la variable $\varepsilon_k = M p(0) E_k$ converge a una distribución gamma de parámetro $k$ y, en particular, $\varepsilon_1$ es exponencial de media unidad. De ello resulta
+\begin{equation}
+    \langle E_{\mathrm{opt}} \rangle = \frac{1}{M p(0)} = \sqrt{2\pi \langle a^2 \rangle N}\; 2^{-N},
+    \label{eq:bg-optimum}
+\end{equation}
+que para números reales uniformes en $[0,1)$, con $\langle a^2 \rangle = 1/3$, vale $\sqrt{2\pi N/3}\,2^{-N} \approx 1{,}447\sqrt{N}\,2^{-N}$ y concuerda con los resultados rigurosos sobre la mediana \parencite{karmarkar1986} y la media \parencite{lueker1998} del óptimo. La aproximación implica además que la desviación típica de $E_{\mathrm{opt}}$ es igual a su media, de modo que el óptimo no es una magnitud autopromediante, y \textcite{borgs2001} la justifican rigurosamente para los $k$ menores valores de la discrepancia. Su consecuencia algorítmica es drástica: un procedimiento que examine $K$ configuraciones elegidas al azar alcanza una discrepancia media del orden de $1/(K p(0))$, que decrece solo como $K^{-1}$, y ningún algoritmo que explore una fracción del espacio puede mejorar apreciablemente este comportamiento \parencite{mertens2001}.
+
+La transición de fase en la existencia de particiones perfectas se refleja en la dificultad computacional de las instancias. Para $\kappa < \kappa_c$ un algoritmo de búsqueda localiza con rapidez alguna de las numerosas particiones perfectas, mientras que para $\kappa > \kappa_c$ la solución única exige un esfuerzo exponencial \parencite{mertens1998}. Cuando se fija el número de bits y se hace variar $N$, el tiempo de solución exacta crece exponencialmente con $N$ si $N \lesssim b$, alcanza un máximo cerca de $N_c = b/\kappa_c$ y se mantiene oscilando alrededor de este valor para $N \gg b$ \parencite{mertens2001,mertens2006}. \textcite{korf1998} observó que las instancias más difíciles para el algoritmo completo de la sección~\ref{sec:bg-ckk} se hallan donde la probabilidad de una partición perfecta es próxima a un medio, y \textcite{gent1996,gent1998} mostraron que, con $N$ fijo, el esfuerzo de búsqueda alcanza su máximo en la transición y se mantiene elevado en la fase sin soluciones, por la necesidad de probar la optimalidad.
+
+El punto crítico que gobierna el comportamiento de un algoritmo concreto no tiene por qué coincidir con $\kappa_c$. \textcite{gent1998} observan que el reescalado de la calidad de las soluciones de las heurísticas requiere $\kappa_c \approx 0{,}40$ para la heurística de Karmarkar--Karp y $\kappa_c \approx 0{,}15$ para la heurística voraz, valores sustancialmente inferiores al de la existencia de particiones perfectas, y \textcite{mertens2006} argumenta que el umbral por debajo del cual la heurística de Karmarkar--Karp produce particiones perfectas depende de $N$ y parece tender a cero cuando $N \to \infty$. Estas observaciones justifican comparar los algoritmos en función de su propio umbral y no únicamente del valor teórico $\kappa_c(N)$.
+
+La herramienta para cuantificar estos umbrales es el escalado de tamaño finito, tomado de la mecánica estadística. Alrededor de un punto crítico $\kappa_c$, las curvas de una magnitud como la probabilidad de partición perfecta, obtenidas para distintos tamaños, deben colapsar en una única función universal al representarlas frente a la variable reescalada $\bigl((\kappa - \kappa_c)/\kappa_c\bigr) N^{1/\nu}$, y en $\kappa_c$ todas las curvas se cruzan en un punto fijo. \textcite{gent1996} estiman $\kappa_c$ como el punto de mínima dispersión entre tamaños, y obtienen $\kappa_c = 0{,}96 \pm 0{,}02$ y $\nu = 1 \pm 0{,}3$ para la existencia de particiones perfectas con $N$ entre $6$ y $30$. Para esta magnitud el teorema~\ref{thm:bcp} proporciona la función de escalado exacta, expresada en la variable $\lambda = b - N + \tfrac{1}{2}\log_2 N$, que constituye una referencia sin parámetros libres para contrastar las simulaciones.
+
+\section{La heurística de diferenciación de Karmarkar--Karp}\label{sec:bg-kk}
+
+La heurística de \textcite{karmarkar1982} se basa en la operación de diferenciación, que sustituye dos elementos de la lista por su diferencia y decide con ello que ambos pertenecerán a subconjuntos opuestos, aplazando la decisión de cuál de ellos corresponde a cada lado. El siguiente resultado formaliza esta equivalencia.
+
+\begin{lemma}[Operación de diferenciación]\label{lem:differencing}
+Sea $L = (l_1, \ldots, l_k)$ una lista de números no negativos con $l_1 \geq l_2$, y sean $L'$ y $L''$ las listas obtenidas al sustituir $l_1$ y $l_2$ por $l_1 - l_2$ y por $l_1 + l_2$, respectivamente. Entonces el conjunto de discrepancias de las particiones de $L$ con $s_1 \neq s_2$ coincide con el conjunto de discrepancias de las particiones de $L'$, y el de las particiones con $s_1 = s_2$ coincide con el de las particiones de $L''$.
+\end{lemma}
+
+\begin{demostracion}
+Si $s_2 = -s_1$, entonces $s_1 l_1 + s_2 l_2 = s_1(l_1 - l_2)$, de modo que $\sum_i s_i l_i = s_1 (l_1 - l_2) + \sum_{i \geq 3} s_i l_i$, que es la suma con signos de $L'$ para el vector $(s_1, s_3, \ldots, s_k)$. La correspondencia entre los vectores de signos de $L$ con $s_2 = -s_1$ y los de $L'$ es biyectiva y conserva el valor absoluto de la suma. El caso $s_2 = s_1$ es análogo, con $s_1 l_1 + s_2 l_2 = s_1(l_1 + l_2)$.
+\end{demostracion}
+
+La heurística aplica $N - 1$ veces la diferenciación a los dos mayores elementos de la lista vigente, como se detalla en el algoritmo~\ref{alg:kk}, y devuelve el único elemento restante, que según el lema~\ref{lem:differencing} es la discrepancia de la partición así construida. Con un montículo máximo cada extracción e inserción cuesta $O(\log N)$, de modo que el tiempo total es $O(N \log N)$ y el espacio $O(N)$ \parencite{mertens2001}. La partición misma se recupera registrando, en cada paso, una arista entre los dos elementos diferenciados: las $N - 1$ aristas forman un árbol cuyos vértices admiten una única bicoloración salvo permutación de los colores, y cada color define un subconjunto \parencite{johnson1991}.
+
+\begin{algorithm}[H]
+\caption{Heurística de diferenciación de Karmarkar--Karp}\label{alg:kk}
+\KwData{lista $\vec{a} = (a_1, \ldots, a_N)$ de números positivos}
+\KwResult{discrepancia $E_{\mathrm{KK}}$ de la partición construida}
+$H \leftarrow$ montículo máximo con los elementos de $\vec{a}$\;
+\For{$k \leftarrow 1$ \KwTo $N - 1$}{
+  $x \leftarrow$ extraer el máximo de $H$\;
+  $y \leftarrow$ extraer el máximo de $H$\;
+  insertar $x - y$ en $H$\;
+}
+\Return{el único elemento de $H$}\;
+\end{algorithm}
+
+Por ejemplo, para la lista $(8, 7, 6, 5, 4)$ las diferenciaciones sucesivas producen $(6, 5, 4, 1)$, $(4, 1, 1)$, $(3, 1)$ y finalmente $2$, de modo que la discrepancia de la heurística es $2$, mientras que la partición $\{8, 7\} \cup \{6, 5, 4\}$ tiene discrepancia nula \parencite{gent1998}. La heurística no es, por tanto, exacta, aunque lo es para listas muy cortas.
+
+\begin{theorem}\label{thm:kk-small}
+La heurística de Karmarkar--Karp obtiene la discrepancia óptima en las instancias de $N \leq 3$ números.
+\end{theorem}
+
+\begin{demostracion}
+Para $N \leq 2$ el resultado es evidente. Sea $N = 3$ con $a \geq b \geq c > 0$. Las discrepancias posibles son $\nnorm{a - b - c}$, $a - b + c$, $a + b - c$ y $a + b + c$, y la heurística obtiene la primera. Se cumple $a + b - c \geq a - b + c$ porque $b \geq c$. Si $a - b - c \geq 0$, entonces $a - b + c \geq a - b - c = \nnorm{a - b - c}$, y si $a - b - c < 0$, se cumple $a - b + c \geq b + c - a = \nnorm{a - b - c}$ porque $a \geq b$. Por tanto $\nnorm{a - b - c}$ es la menor de las cuatro.
+\end{demostracion}
+
+\textcite{gent1998} demuestran que la propiedad se extiende a $N = 4$, hecho que se utiliza en la sección siguiente.
+
+Respecto de la calidad asintótica, la discrepancia de la partición construida por la heurística voraz, que asigna cada número, en orden decreciente, al subconjunto de menor suma, es del orden del último número asignado, es decir, del orden de $1/N$ para reales uniformes en $[0,1]$. La diferenciación reduce de forma repetida el tamaño de los números restantes, y \textcite{karmarkar1982} conjeturaron que la discrepancia esperada decae como $N^{-c\log N}$ para una constante $c > 0$, conjetura que demostró \textcite{yakir1996}. La brecha con el óptimo, de orden $\sqrt{N}\,2^{-N}$ según \eqref{eq:bg-optimum}, sigue siendo exponencial, y \textcite{mertens2006} señala como problema abierto la existencia de un algoritmo polinomial que la reduzca. Existen variantes de la heurística, como la diferenciación por pares, que agrupa los elementos en parejas sucesivas antes de reordenar, y la que diferencia los dos elementos más próximos, de peor rendimiento \parencite{gent1998}.
+
+\section{El algoritmo completo de Karmarkar--Karp}\label{sec:bg-ckk}
+
+La heurística de la sección anterior compromete, en cada paso, la decisión de colocar los dos mayores elementos en subconjuntos opuestos. El lema~\ref{lem:differencing} indica que la alternativa, colocarlos en el mismo subconjunto, equivale a sustituirlos por su suma, y \textcite{korf1998} aprovechó esta observación para definir un algoritmo completo que recorre ambas posibilidades. El algoritmo explora un árbol binario en el que cada nodo contiene una lista de números y sus dos hijos son las listas $L'$ y $L''$ del lema~\ref{lem:differencing}, con la rama izquierda correspondiente a la diferencia y la derecha a la suma, de modo que la primera hoja alcanzada en profundidad y por la izquierda es la solución de la heurística.
+
+\begin{theorem}[Completitud del árbol]\label{thm:ckk-tree}
+El árbol de una lista de $N$ elementos tiene $2^{N-1}$ hojas, y la correspondencia que asocia a cada hoja la partición determinada por las decisiones del camino que conduce a ella es una biyección sobre las particiones salvo simetría de signos, de modo que el valor de la hoja es la discrepancia de su partición.
+\end{theorem}
+
+\begin{demostracion}
+Se procede por inducción sobre la longitud $k$ de la lista. Para $k = 1$ hay una hoja cuyo valor es el único elemento. Para $k \geq 2$, el lema~\ref{lem:differencing} establece biyecciones entre los vectores de signos de $L$ con $s_1 \neq s_2$ y los de $L'$, y entre los de $L$ con $s_1 = s_2$ y los de $L''$, que conservan la discrepancia. Como $L'$ y $L''$ tienen longitud $k - 1$, la hipótesis de inducción da $2^{k-2}$ hojas en cada subárbol, que representan las particiones de $L$ con $s_1 \neq s_2$ y con $s_1 = s_2$ respectivamente salvo el cambio global de signo. El total es $2^{k-1}$ y las dos familias son disjuntas.
+\end{demostracion}
+
+La exploración exhaustiva requiere, por tanto, visitar $O(2^N)$ nodos. El algoritmo la evita mediante poda, apoyada en las cotas del lema~\ref{lem:bounds}.
+
+\begin{lemma}[Cota de poda]\label{lem:prune}
+Sea $L$ una lista con mayor elemento $x$ y suma de los restantes $r$. Si $x \geq r$, la menor discrepancia de las particiones de $L$ es exactamente $x - r$.
+\end{lemma}
+
+\begin{demostracion}
+Por la desigualdad triangular, toda partición tiene discrepancia al menos $x - r$, y esta cota se alcanza colocando $x$ en un subconjunto y todos los demás elementos en el otro, ya que $x - r \geq 0$.
+\end{demostracion}
+
+Cuando un nodo cumple $x \geq r$ no es necesario ramificar, pues su valor óptimo se conoce, y la búsqueda se detiene en cuanto se encuentra una partición perfecta, ya que por el lema~\ref{lem:bounds} no puede existir una mejor. Además, como la heurística es óptima para listas de a lo sumo cuatro elementos, en tales nodos basta explorar la rama izquierda \parencite{mertens2006}. El algoritmo~\ref{alg:ckk} recoge estas reglas, con la mejor discrepancia encontrada $E^\ast$ como variable global inicializada en infinito y la cota de paridad $\pi = S \bmod 2$ calculada una sola vez.
+
+\begin{algorithm}[H]
+\caption{CKK$(L)$}\label{alg:ckk}
+\KwData{lista $L$ ordenada de forma no creciente; variables globales $E^\ast$ y $\pi$}
+\If{$E^\ast \leq \pi$}{\Return\;}
+$x \leftarrow l_1$; \quad $r \leftarrow \sum_{i \geq 2} l_i$\;
+\eIf{$|L| = 1$ \textbf{o} $x \geq r$ \textbf{o} $|L| \leq 4$}{
+  $E^\ast \leftarrow \min\{E^\ast,\; v(L)\}$, con $v(L) = x - r$ si $x \geq r$ y $v(L) = $ resultado de Karmarkar--Karp$(L)$ en otro caso\;
+}{
+  $L' \leftarrow$ $L$ con $l_1, l_2$ sustituidos por $l_1 - l_2$, reordenada\;
+  CKK$(L')$\;
+  $L'' \leftarrow$ $L$ con $l_1, l_2$ sustituidos por $l_1 + l_2$, reordenada\;
+  CKK$(L'')$\;
+}
+\end{algorithm}
+
+Una consecuencia del orden de exploración es la propiedad de algoritmo en cualquier momento: la primera solución es la de la heurística y cada actualización de $E^\ast$ la mejora, de modo que la ejecución puede interrumpirse en cualquier instante con la mejor partición hallada, y su continuación hasta agotar el árbol prueba la optimalidad. \textcite{korf1998} informa de mejoras superiores a siete órdenes de magnitud sobre la solución heurística en menos de una hora para cincuenta enteros de $48$ bits. El peor caso sigue siendo $O(2^N)$ en tiempo y lineal en espacio, pero el coste medio máximo medido en nodos crece como $2^{0{,}85N}$, frente a $2^{0{,}90N}$ para la búsqueda voraz con retroceso y $2^N$ para la exhaustiva \parencite{gent1996,gent1998}, y \textcite{mertens2001} ilustra con la lista $(8,7,6,5,4)$ que de los $31$ nodos del árbol completo solo se exploran $9$. Para las instancias con muchas particiones perfectas el comportamiento es radicalmente más favorable: si la primera hoja es perfecta, el algoritmo termina tras visitar $N$ nodos, y el coste decrece al aumentar $N$ a $b$ fijo, como se indicó en la sección~\ref{sec:bg-random}. En la fase difícil, en cambio, el orden de exploración no puede aprovechar ninguna estructura, y los algoritmos completos basados en diferenciación o en la heurística voraz son equivalentes entre sí y a la búsqueda aleatoria \parencite{mertens2006}.
+
+El algoritmo se extiende a la partición balanceada \parencite{mertens1999} y a la partición en $k$ subconjuntos, para la que se combinan las subparticiones de todas las formas posibles y resulta asintóticamente mejor que el resto de procedimientos conocidos \parencite{korf1998}.
+
+\section{Recocido simulado}\label{sec:bg-sa}
+
+El recocido simulado es una técnica estocástica de optimización que aprovecha la correspondencia entre la minimización de una función de coste y la búsqueda del estado de menor energía de un sistema físico \parencite{kirkpatrick1983}. Su ingrediente básico es el algoritmo de Metropolis \parencite{metropolis1953}, que genera una cadena de Markov sobre las configuraciones del sistema a una temperatura $T > 0$ dada. Para el espacio $\{-1,+1\}^N$ y una función de energía $H$, un paso consiste en elegir un índice $i$ uniformemente, proponer el vector $\vec{s}^{(i)}$ que resulta de invertir la componente $s_i$ y aceptar la propuesta con probabilidad $\min\{1, \me{-\Delta H/T}\}$, donde $\Delta H = H(\vec{s}^{(i)}) - H(\vec{s})$. Con ello, los movimientos que disminuyen la energía se aceptan siempre y los que la aumentan se aceptan con una probabilidad que decrece al aumentar el incremento y al disminuir la temperatura.
+
+\begin{theorem}[Balance detallado]\label{thm:metropolis}
+La distribución de Gibbs $\pi_T(\vec{s}) = \me{-H(\vec{s})/T}/Z_T$, con $Z_T = \sum_{\vec{s}} \me{-H(\vec{s})/T}$, es estacionaria para la cadena de Metropolis. Si $H$ no es constante, la cadena es además irreducible y aperiódica y, por tanto, converge a $\pi_T$ desde cualquier configuración inicial.
+\end{theorem}
+
+\begin{demostracion}
+La probabilidad de transición entre dos configuraciones vecinas $\vec{s}$ y $\vec{s}'$ es $P(\vec{s}, \vec{s}') = \tfrac{1}{N}\min\{1, \me{-(H(\vec{s}') - H(\vec{s}))/T}\}$. Entonces
+\[
+    \pi_T(\vec{s})\,P(\vec{s}, \vec{s}') = \frac{1}{N Z_T}\min\bigl\{\me{-H(\vec{s})/T},\, \me{-H(\vec{s}')/T}\bigr\} = \pi_T(\vec{s}')\,P(\vec{s}', \vec{s}),
+\]
+lo que prueba la reversibilidad y, sumando sobre $\vec{s}$, la estacionariedad. Cualquier par de configuraciones se conecta mediante una sucesión de inversiones de componentes individuales, todas con probabilidad positiva, de modo que la cadena es irreducible, y si $H$ no es constante existe una configuración con alguna propuesta rechazada, es decir, con probabilidad positiva de permanecer en ella, lo que garantiza la aperiodicidad. La convergencia se sigue del teorema ergódico para cadenas de Markov finitas.
+\end{demostracion}
+
+La temperatura controla la concentración de $\pi_T$ en torno a las configuraciones de menor energía.
+
+\begin{lemma}[Límite de temperatura nula]\label{lem:zero-temp}
+Sean $H_{\min} = \min_{\vec{s}} H(\vec{s})$ y $G$ el conjunto de configuraciones que alcanzan el mínimo. Cuando $T \to 0$, $\pi_T(\vec{s}) \to 1/\nnorm{G}$ si $\vec{s} \in G$ y $\pi_T(\vec{s}) \to 0$ en otro caso.
+\end{lemma}
+
+\begin{demostracion}
+Se escribe $Z_T = \me{-H_{\min}/T}\bigl(\nnorm{G} + \sum_{\vec{s} \notin G} \me{-(H(\vec{s}) - H_{\min})/T}\bigr)$. Como cada exponente de la suma restante es negativo y tiende a $-\infty$ con $T \to 0$, el paréntesis tiende a $\nnorm{G}$, y $\pi_T(\vec{s}) = \me{-(H(\vec{s}) - H_{\min})/T}\big/\bigl(\nnorm{G} + \sum_{\vec{s}'\notin G} \cdots\bigr)$ tiene los límites indicados.
+\end{demostracion}
+
+De ello se sigue que la energía libre $F(T) = -T\ln Z_T$ tiende a $H_{\min}$ y que la entropía tiende al logaritmo del número de estados base cuando $T \to 0$, que es la magnitud mediante la cual \textcite{mertens2001} detecta la transición de la sección~\ref{sec:bg-random}: a temperatura nula, la entropía es extensiva en la fase $\kappa < \kappa_c$ y se reduce a $\ln 2$ en la fase $\kappa > \kappa_c$, por la simetría de signos.
+
+El recocido simulado utiliza la cadena anterior con una temperatura que se reduce de forma gradual, de modo que el sistema permanezca próximo al equilibrio mientras la distribución se concentra en los estados de menor energía. Su especificación completa exige definir una temperatura inicial $T_0$, la ley de enfriamiento, el número de intentos de movimiento por temperatura y el criterio de parada, tal como recoge el algoritmo~\ref{alg:sa}. \textcite{kirkpatrick1983} emplean un enfriamiento geométrico $T_{k+1} = r\,T_k$ con razón $r = 0{,}9$ en su ejemplo de partición de circuitos, con un número de intentos por temperatura proporcional al tamaño del problema y con la detención del proceso cuando varias temperaturas consecutivas no producen aceptaciones, y \textcite{johnson1991} adoptan para el problema de partición de números un enfriamiento geométrico con razón $0{,}9$, una temperatura inicial para la cual la probabilidad de aceptar el movimiento cuesta arriba medio es $0{,}5$ y un criterio de parada basado en la tasa de aceptación y en la estabilidad del valor de la solución durante las últimas temperaturas. \textcite{angelini2026}, por su parte, utilizan un enfriamiento lineal de $T_0$ a cero con una barrida de Monte Carlo por temperatura, donde una barrida es una sucesión de $N$ intentos de movimiento.
+
+\begin{algorithm}[H]
+\caption{Recocido simulado}\label{alg:sa}
+\KwData{instancia $\vec{a}$, función de energía $H$, temperatura inicial $T_0$, razón de enfriamiento $r$, intentos por temperatura $L$}
+\KwResult{mejor configuración $\vec{s}^\ast$ encontrada}
+$\vec{s} \leftarrow$ vector de signos aleatorio; \quad $\vec{s}^\ast \leftarrow \vec{s}$; \quad $T \leftarrow T_0$\;
+\While{no se cumpla el criterio de parada}{
+  \For{$l \leftarrow 1$ \KwTo $L$}{
+    elegir $i \in \{1, \ldots, N\}$ uniformemente; \quad $\Delta \leftarrow H(\vec{s}^{(i)}) - H(\vec{s})$\;
+    \If{$\Delta \leq 0$ \textbf{o} $u < \me{-\Delta/T}$, con $u$ uniforme en $[0,1)$}{
+      $\vec{s} \leftarrow \vec{s}^{(i)}$\;
+      \If{$H(\vec{s}) < H(\vec{s}^\ast)$}{$\vec{s}^\ast \leftarrow \vec{s}$\;}
+    }
+  }
+  $T \leftarrow r\,T$\;
+}
+\Return{$\vec{s}^\ast$}\;
+\end{algorithm}
+
+En el problema de partición de números el cálculo del incremento es especialmente barato. Si se mantiene la suma con signos $X = \sum_j s_j a_j$, la inversión de $s_i$ la transforma en $X - 2 s_i a_i$, de modo que tanto $E = \nnorm{X}$ como $H = X^2$ se actualizan en tiempo constante. La energía puede tomarse igual a $E$, como en la función de partición de \textcite{mertens2001}, o igual a $H = E^2$, o incluso a $\log E$, alternativa que \textcite{johnson1991} probaron sin obtener mejoras apreciables. Por otra parte, la vecindad natural, que invierte uno o dos elementos, define una familia de vecindades $\mathrm{SW}_k$ cuyo tamaño crece como $N^k$, lo que vuelve inviables las de $k > 2$.
+
+El comportamiento del algoritmo sobre este problema se ve condicionado por el paisaje de energía. Los movimientos elementales modifican la discrepancia en cantidades del orden de $1/N$ o mayores, mientras que la discrepancia óptima es del orden de $\sqrt{N}\,2^{-N}$, de modo que las soluciones razonables son óptimos locales enterrados en valles profundos, y el terreno resulta tan accidentado que configuraciones vecinas difieren enormemente en calidad \parencite{johnson1991}. \textcite{ferreira1998} calculan que el número de mínimos locales de la vecindad $\mathrm{SW}_1$ es del orden de $2^N/N^{3/2}$, con energía típica del orden de $2/N$, y \textcite{mertens2001} muestra que las particiones de coste similar son prácticamente independientes entre sí, lo que es coherente con la equivalencia con un problema de costes aleatorios y con la imposibilidad de que un método guiado por la vecindad supere a la búsqueda aleatoria. Los resultados experimentales de \textcite{johnson1991} son consistentes con este análisis: sobre instancias de reales uniformes con $200$ y $500$ elementos y tiempo de ejecución limitado, el recocido simulado no resultó competitivo con la heurística de Karmarkar--Karp y, a igualdad de tiempo de cómputo, no superó a múltiples ejecuciones de optimización local desde inicios aleatorios. \textcite{ruml1996} mostraron que representaciones alternativas de las particiones mejoran de manera notable a los métodos estocásticos, aunque, según \textcite{korf1998}, la mejora queda por debajo de la lograda por el algoritmo completo.
+
+La evaluación de un algoritmo estocástico requiere precisar el presupuesto de tiempo con que se ejecuta, porque este condiciona el resultado. \textcite{angelini2026} demuestran, para el recocido simulado aplicado a la satisfacibilidad aleatoria, que si el tiempo total escala como $t = A N^z$, las curvas de la probabilidad de éxito frente al parámetro de control correspondientes a distintos tamaños se cruzan en un punto que define el umbral algorítmico de ese régimen, y que el umbral aumenta al pasar del tiempo lineal al cuadrático y al cúbico, sin mejorar más allá. En el régimen de tiempo lineal, con un número fijo de barridas, no se observan cruces y las estimaciones del umbral exigen extrapolaciones inciertas, de modo que resultan preferibles los regímenes superlineales. Cuando los cruces entre tamaños $N$ y $2N$ dependen del tamaño, el umbral se extrapola mediante $\alpha_{\mathrm{cruce}}(N, 2N) = \alpha - c N^{-\omega}$. Este marco se formuló para otros problemas, pero su metodología, basada en el escalado de tamaño finito y en la variación explícita del tiempo de ejecución, es aplicable a la medición de la probabilidad de hallar una partición perfecta en función de $\kappa$ y constituye la referencia metodológica para el análisis del recocido simulado en torno a la transición.

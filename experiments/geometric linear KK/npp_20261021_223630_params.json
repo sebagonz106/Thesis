@@ -1,0 +1,41 @@
+{
+  "A_prefactor": 1.0,
+  "N_values": [
+    29,
+    30,
+    31
+  ],
+  "T0": "heuristic (sum(numbers)/(4N))",
+  "b_values": [
+    [
+      25,
+      26,
+      27,
+      28
+    ],
+    [
+      26,
+      27,
+      28,
+      29
+    ],
+    [
+      27,
+      28,
+      29,
+      30
+    ]
+  ],
+  "cooling_factor": 0.9999999999999999,
+  "cooling_strategy": "geometric",
+  "elapsed_time_seconds": 101372.717,
+  "kappa_values": null,
+  "min_T": 1.0e-12,
+  "n_MCS_limit": 10000000,
+  "n_individual_runs": 1200,
+  "regime": "linear",
+  "samples": 100,
+  "seed": 16,
+  "timestamp": "20261021_223630",
+  "use_kk_init": true
+}
